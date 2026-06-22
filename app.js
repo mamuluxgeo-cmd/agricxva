@@ -166,12 +166,23 @@ function renderGoods() {
 function renderGoodsCard(g) {
   const next = nextStatus(g.Status);
   const group = g.ShipmentGroupName ? `<span class="badge">${g.ShipmentGroupName}</span>` : '';
-  const receivedValue = Number(g.ReceivedAmountCNY || 0);
-  const diff = g.Status === 'დასრულებულია' ? `<div class="meta">მიღებული: <b>${money(receivedValue)} CNY</b> · სხვაობა: <b class="${balanceClass(g.DifferenceCNY)}">${money(g.DifferenceCNY)} CNY</b> / ${money(g.DifferenceBoxes)} ყუთი</div>` : '';
+  const sentAmount = Number(g.AmountCNY || 0);
+  const sentBoxes = Number(g.Boxes || 0);
+  const receivedAmount = Number(g.ReceivedAmountCNY || 0);
+  const receivedBoxes = Number(g.ReceivedBoxes || 0);
+  const showReceived = g.Status === 'მიღებულია' || g.Status === 'დასრულებულია';
+  const receivedBlock = showReceived ? `
+    <div class="meta">გამოგზავნილი: <b>${money(sentAmount)} CNY</b> / <b>${money(sentBoxes)} ყუთი</b></div>
+    <div class="meta">მიღებული: <b class="positive">${money(receivedAmount)} CNY</b> / <b>${money(receivedBoxes)} ყუთი</b></div>
+  ` : `
+    <div class="meta">გამოგზავნილი: <b>${money(sentAmount)} CNY</b> / <b>${money(sentBoxes)} ყუთი</b></div>
+  `;
+  const diff = g.Status === 'დასრულებულია' ? `<div class="meta">სხვაობა: <b class="${balanceClass(g.DifferenceCNY)}">${money(g.DifferenceCNY)} CNY</b> / <b class="${balanceClass(g.DifferenceBoxes)}">${money(g.DifferenceBoxes)} ყუთი</b></div>` : '';
   return `<div class="goods-card">
     <b>${g.ProductName || 'საქონელი'}</b>
-    <div class="meta">${g.SupplierName || '-'} · ${money(g.AmountCNY)} CNY · ${money(g.Boxes)} ყუთი</div>
+    <div class="meta">${g.SupplierName || '-'}</div>
     ${group}
+    ${receivedBlock}
     ${diff}
     <div class="card-actions" style="margin-top:12px">
       ${next ? `<button class="small-btn" onclick="moveGoodsPrompt('${g.ID}','${next}')">${next}</button>` : ''}
@@ -197,12 +208,12 @@ async function moveGoodsPrompt(id, status) {
   }
   if (status === 'მიღებულია') {
     patch.ReceivedDate = prompt('მიღების თარიღი', today()) || today();
-    patch.ReceivedAmountCNY = prompt('მიღებული თანხა CNY', item.AmountCNY || 0) || item.AmountCNY;
-    patch.ReceivedBoxes = prompt('მიღებული ყუთები', item.Boxes || 0) || item.Boxes;
+    patch.ReceivedAmountCNY = prompt('ფაქტიურად მიღებული თანხა CNY', item.ReceivedAmountCNY || item.AmountCNY || 0) || item.AmountCNY;
+    patch.ReceivedBoxes = prompt('ფაქტიურად მიღებული ყუთები', item.ReceivedBoxes || item.Boxes || 0) || item.Boxes;
   }
   if (status === 'დასრულებულია') {
-    patch.ReceivedAmountCNY = item.ReceivedAmountCNY || prompt('მიღებული თანხა CNY', item.AmountCNY || 0) || item.AmountCNY;
-    patch.ReceivedBoxes = item.ReceivedBoxes || prompt('მიღებული ყუთები', item.Boxes || 0) || item.Boxes;
+    patch.ReceivedAmountCNY = item.ReceivedAmountCNY || prompt('ფაქტიურად მიღებული თანხა CNY', item.AmountCNY || 0) || item.AmountCNY;
+    patch.ReceivedBoxes = item.ReceivedBoxes || prompt('ფაქტიურად მიღებული ყუთები', item.Boxes || 0) || item.Boxes;
     patch.DifferenceComment = prompt('კომენტარი: რა აკლდა ან რა იყო ზედმეტი', item.DifferenceComment || '') || item.DifferenceComment || '';
   }
   await saveAction('moveGoods', patch, id, status);
@@ -259,10 +270,10 @@ function buildForms() {
     field('OpeningBalance','საწყისი ბალანსი','number'), selectField('OpeningBalanceType','ბალანსის ტიპი',['პლიუსი','მინუსი']), field('Comment','კომენტარი','textarea','full')
   ], 'submitSupplier');
   $('#goodsForm').innerHTML = formShell('საქონელი', [
-    selectDynamic('SupplierID','მომწოდებელი','suppliers'), field('ProductName','საქონელი'), field('AmountCNY','თანხა CNY','number'), field('Boxes','ყუთები','number'),
+    selectDynamic('SupplierID','მომწოდებელი','suppliers'), field('ProductName','საქონელი'), field('AmountCNY','გამოგზავნილი თანხა CNY','number'), field('Boxes','გამოგზავნილი ყუთები','number'),
     selectField('Status','სტატუსი',statusFlow.concat(['პრობლემურია'])), selectDynamic('ShipmentGroupID','გზავნილის ჯგუფი','shipmentGroups', true),
     field('OrderDate','შეკვეთის თარიღი','date'), field('SentDate','გამოგზავნის თარიღი','date'), field('ExpectedArrivalDate','სავარაუდო ჩამოსვლა','date'), field('ReceivedDate','მიღების თარიღი','date'),
-    field('ReceivedAmountCNY','მიღებული თანხა CNY','number'), field('ReceivedBoxes','მიღებული ყუთები','number'), field('DifferenceComment','სხვაობის კომენტარი','textarea','full'), field('Comment','კომენტარი','textarea','full')
+    field('ReceivedAmountCNY','ფაქტიურად მიღებული თანხა CNY','number'), field('ReceivedBoxes','ფაქტიურად მიღებული ყუთები','number'), field('DifferenceComment','სხვაობის კომენტარი','textarea','full'), field('Comment','კომენტარი','textarea','full')
   ], 'submitGoods');
   $('#shipmentForm').innerHTML = formShell('გზავნილის ჯგუფი', [field('GroupName','ჯგუფის ნომერი / სახელი'), field('OriginCountry','ქვეყანა'), field('SentDate','გამოგზავნის თარიღი','date'), field('ExpectedArrivalDate','სავარაუდო ჩამოსვლა','date'), selectField('Status','სტატუსი',['გზაში','ნაწილობრივ მიღებული','მიღებულია','დასრულებულია','პრობლემურია']), field('Comment','კომენტარი','textarea','full')], 'submitShipment');
   $('#chargeForm').innerHTML = formShell('დარიცხვა', [selectDynamic('SupplierID','მომწოდებელი','suppliers'), field('ChargeDate','თარიღი','date'), field('AmountCNY','თანხა CNY','number'), field('Comment','კომენტარი','textarea','full')], 'submitCharge');
