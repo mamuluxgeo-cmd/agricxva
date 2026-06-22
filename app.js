@@ -10,7 +10,6 @@ const state = {
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 const money = n => Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
-const val = id => document.getElementById(id)?.value || '';
 const balanceClass = n => Number(n || 0) > 0 ? 'positive' : Number(n || 0) < 0 ? 'negative' : 'neutral';
 
 const pages = {
@@ -124,7 +123,7 @@ function renderDashboard() {
     ['მიღებული', d.goodsReceivedCount],
     ['დარიცხვა CNY', money(d.totalChargesCNY)],
     ['გადარიცხვა CNY', money(d.totalPaymentsCNY)],
-    ['საქონლის სხვაობა', money(d.totalGoodsDifferenceCNY)],
+    ['მიღებული საქონელი CNY', money(d.totalGoodsReceivedCNY)],
     ['საერთო ნაშთი CNY', money(d.totalSupplierBalanceCNY)],
   ];
   $('#dashboardCards').innerHTML = cards.map(([label, value]) => `<div class="stat-card"><p>${label}</p><strong>${value ?? 0}</strong></div>`).join('');
@@ -146,7 +145,7 @@ function renderSuppliers() {
       <h3>${s.supplierName}</h3>
       <div class="meta">${s.country || '-'} · ${s.category || '-'} · ${s.currency || 'CNY'}</div>
       <div class="balance ${balanceClass(s.balanceCNY)}">${money(s.balanceCNY)} CNY</div>
-      <div class="meta">დარიცხვა: ${money(s.totalChargesCNY)} · გადარიცხვა: ${money(s.totalPaymentsCNY)} · სხვაობა: ${money(s.goodsDifferenceCNY)}</div>
+      <div class="meta">დარიცხვა: ${money(s.totalChargesCNY)} · გადარიცხვა: ${money(s.totalPaymentsCNY)} · მიღებული საქონელი: ${money(s.totalGoodsReceivedCNY)}</div>
       <div class="card-actions">
         <button class="small-btn" onclick="openSupplierCard('${s.supplierId}')">გახსნა</button>
         <button class="small-btn" onclick="openSupplierForm('${s.supplierId}')">რედაქტირება</button>
@@ -167,7 +166,8 @@ function renderGoods() {
 function renderGoodsCard(g) {
   const next = nextStatus(g.Status);
   const group = g.ShipmentGroupName ? `<span class="badge">${g.ShipmentGroupName}</span>` : '';
-  const diff = g.Status === 'დასრულებულია' ? `<div class="meta">სხვაობა: <b class="${balanceClass(g.DifferenceCNY)}">${money(g.DifferenceCNY)} CNY</b> / ${money(g.DifferenceBoxes)} ყუთი</div>` : '';
+  const receivedValue = Number(g.ReceivedAmountCNY || 0);
+  const diff = g.Status === 'დასრულებულია' ? `<div class="meta">მიღებული: <b>${money(receivedValue)} CNY</b> · სხვაობა: <b class="${balanceClass(g.DifferenceCNY)}">${money(g.DifferenceCNY)} CNY</b> / ${money(g.DifferenceBoxes)} ყუთი</div>` : '';
   return `<div class="goods-card">
     <b>${g.ProductName || 'საქონელი'}</b>
     <div class="meta">${g.SupplierName || '-'} · ${money(g.AmountCNY)} CNY · ${money(g.Boxes)} ყუთი</div>
@@ -222,10 +222,31 @@ function renderCharges() {
 
 function renderBanks() {
   const cards = state.data?.bankCards || [];
-  $('#banksGrid').innerHTML = emptyOr(cards.map(b => `<div class="stat-card bank-card"><p>${b.bankName}</p><strong>${money(b.balance)} ${b.currency}</strong><div class="meta">ჩარიცხვა: ${money(b.depositedNet)} · გასული: ${money(b.totalOut)} · საკომისიო: ${money(Number(b.depositFees || 0) + Number(b.paymentFees || 0))}</div><div class="card-actions"><button class="small-btn" onclick="openBankForm('${b.bankId}')">რედაქტირება</button><button class="small-btn danger" onclick="deleteRow('deleteBank','${b.bankId}')">წაშლა</button></div></div>`));
-  const deposits = (state.data.bankDeposits || []).map(x => ({ date:x.DepositDate, text:`${x.BankName} — ჩარიცხვა ${money(x.NetAmount)} ${x.Currency}, საკომისიო ${money(x.Fee)}` }));
-  const payments = (state.data.supplierPayments || []).map(x => ({ date:x.PaymentDate, text:`${x.BankName} → ${x.SupplierName} — ${money(x.ReflectedCNY)} CNY, ბანკიდან ${money(x.BankTotalOut)} ${x.BankCurrency}` }));
-  $('#bankOperations').innerHTML = emptyOr(deposits.concat(payments).sort((a,b)=>String(b.date).localeCompare(String(a.date))).map(x => `<div class="mini-row"><span>${x.text}</span><b>${x.date}</b></div>`));
+  $('#banksGrid').innerHTML = emptyOr(cards.map(b => `<div class="stat-card bank-card">
+    <p>${b.bankName}</p>
+    <strong>${money(b.balance)} ${b.currency}</strong>
+    <div class="meta">ჩარიცხვა: ${money(b.depositedNet)} · გასული: ${money(b.totalOut)} · საკომისიო: ${money(Number(b.depositFees || 0) + Number(b.paymentFees || 0))}</div>
+    <div class="card-actions"><button class="small-btn" onclick="openBankForm('${b.bankId}')">რედაქტირება</button><button class="small-btn danger" onclick="deleteRow('deleteBank','${b.bankId}')">წაშლა</button></div>
+  </div>`));
+
+  const deposits = (state.data.bankDeposits || []).map(x => ({
+    date:x.DepositDate,
+    type:'deposit',
+    id:x.ID,
+    text:`${x.BankName} — გადარიცხული ${money(x.Amount)} ${x.TransferCurrency || x.Currency}, საკომისიო ${money(x.Fee)}${x.FeePercent ? ' (' + x.FeePercent + '%)' : ''}, ბალანსზე დაჯდა ${money(x.NetAmount)} ${x.Currency}`
+  }));
+  const payments = (state.data.supplierPayments || []).map(x => ({
+    date:x.PaymentDate,
+    type:'payment',
+    id:x.ID,
+    text:`${x.BankName} → ${x.SupplierName} — მომწოდებელზე აისახა ${money(x.ReflectedCNY)} CNY, ბანკიდან გავიდა ${money(x.BankTotalOut)} ${x.BankCurrency}`
+  }));
+
+  $('#bankOperations').innerHTML = emptyOr(deposits.concat(payments).sort((a,b)=>String(b.date).localeCompare(String(a.date))).map(x => `
+    <div class="mini-row">
+      <span>${x.text}</span>
+      <div class="card-actions"><b>${x.date}</b><button class="small-btn" onclick="${x.type === 'deposit' ? 'openDepositForm' : 'openPaymentForm'}('${x.id}')">რედაქტირება</button><button class="small-btn danger" onclick="deleteRow('${x.type === 'deposit' ? 'deleteBankDeposit' : 'deleteSupplierPayment'}','${x.id}')">წაშლა</button></div>
+    </div>`));
 }
 
 function emptyOr(arr, empty = '<div class="empty">ჩანაწერი არ არის</div>') { return arr.length ? arr.join('') : empty; }
@@ -235,29 +256,40 @@ function buildForms() {
   $('#supplierForm').innerHTML = formShell('მომწოდებელი', [
     field('SupplierName','მომწოდებლის სახელი'), field('Country','ქვეყანა'), field('Category','კატეგორია'),
     selectField('Currency','ვალუტა',['CNY','USD','GEL','EUR','TRY']), selectField('Status','სტატუსი',['აქტიური','პასიური']),
-    field('OpeningBalance','საწყისი ბალანსი','number'), selectField('OpeningBalanceType','ბალანსის ტიპი',['პლიუსი','მინუსი']),
-    field('Comment','კომენტარი','textarea','full')
-  ], 'submitSupplier') ;
-
+    field('OpeningBalance','საწყისი ბალანსი','number'), selectField('OpeningBalanceType','ბალანსის ტიპი',['პლიუსი','მინუსი']), field('Comment','კომენტარი','textarea','full')
+  ], 'submitSupplier');
   $('#goodsForm').innerHTML = formShell('საქონელი', [
     selectDynamic('SupplierID','მომწოდებელი','suppliers'), field('ProductName','საქონელი'), field('AmountCNY','თანხა CNY','number'), field('Boxes','ყუთები','number'),
     selectField('Status','სტატუსი',statusFlow.concat(['პრობლემურია'])), selectDynamic('ShipmentGroupID','გზავნილის ჯგუფი','shipmentGroups', true),
     field('OrderDate','შეკვეთის თარიღი','date'), field('SentDate','გამოგზავნის თარიღი','date'), field('ExpectedArrivalDate','სავარაუდო ჩამოსვლა','date'), field('ReceivedDate','მიღების თარიღი','date'),
-    field('ReceivedAmountCNY','მიღებული თანხა CNY','number'), field('ReceivedBoxes','მიღებული ყუთები','number'),
-    field('DifferenceComment','სხვაობის კომენტარი','textarea','full'), field('Comment','კომენტარი','textarea','full')
+    field('ReceivedAmountCNY','მიღებული თანხა CNY','number'), field('ReceivedBoxes','მიღებული ყუთები','number'), field('DifferenceComment','სხვაობის კომენტარი','textarea','full'), field('Comment','კომენტარი','textarea','full')
   ], 'submitGoods');
-
   $('#shipmentForm').innerHTML = formShell('გზავნილის ჯგუფი', [field('GroupName','ჯგუფის ნომერი / სახელი'), field('OriginCountry','ქვეყანა'), field('SentDate','გამოგზავნის თარიღი','date'), field('ExpectedArrivalDate','სავარაუდო ჩამოსვლა','date'), selectField('Status','სტატუსი',['გზაში','ნაწილობრივ მიღებული','მიღებულია','დასრულებულია','პრობლემურია']), field('Comment','კომენტარი','textarea','full')], 'submitShipment');
   $('#chargeForm').innerHTML = formShell('დარიცხვა', [selectDynamic('SupplierID','მომწოდებელი','suppliers'), field('ChargeDate','თარიღი','date'), field('AmountCNY','თანხა CNY','number'), field('Comment','კომენტარი','textarea','full')], 'submitCharge');
-  $('#bankForm').innerHTML = formShell('ბანკი', [field('BankName','ბანკის სახელი'), field('AccountName','ანგარიშის სახელი'), selectField('Currency','ვალუტა',['USD','CNY','GEL','EUR','TRY']), field('OpeningBalance','საწყისი ბალანსი','number'), selectField('Status','სტატუსი',['აქტიური','პასიური']), field('Comment','კომენტარი','textarea','full')], 'submitBank');
-  $('#depositForm').innerHTML = formShell('ბანკში ჩარიცხვა', [selectDynamic('BankID','ბანკი','banks'), field('DepositDate','თარიღი','date'), field('Amount','ჩარიცხული თანხა','number'), field('Fee','საკომისიო','number'), selectField('Currency','ვალუტა',['USD','CNY','GEL','EUR','TRY']), field('Comment','კომენტარი','textarea','full')], 'submitDeposit');
+  $('#bankForm').innerHTML = formShell('ბანკი', [field('BankName','ბანკის სახელი'), field('AccountName','ანგარიშის სახელი'), selectField('Currency','ბანკის ბალანსის ვალუტა',['USD','CNY','GEL','EUR','TRY']), field('OpeningBalance','საწყისი ბალანსი','number'), selectField('Status','სტატუსი',['აქტიური','პასიური']), field('Comment','კომენტარი','textarea','full')], 'submitBank');
+  $('#depositForm').innerHTML = formShell('ბანკში ჩარიცხვა', [selectDynamic('BankID','ბანკი','banks'), field('DepositDate','თარიღი','date'), field('Amount','გადარიცხული თანხა','number'), selectField('TransferCurrency','გადარიცხული ვალუტა',['USD','CNY','GEL','EUR','TRY']), field('FeePercent','საკომისიო %','number'), field('Fee','საკომისიო თანხით','number'), field('NetTransferAmount','საკომისიოს შემდეგ დარჩა','number'), field('NetAmount','ბანკზე ასახული თანხა','number'), selectField('Currency','ბანკზე ასახული ვალუტა',['CNY','USD','GEL','EUR','TRY']), field('Comment','კომენტარი','textarea','full')], 'submitDeposit');
   $('#paymentForm').innerHTML = formShell('მომწოდებელზე გადარიცხვა', [selectDynamic('SupplierID','მომწოდებელი','suppliers'), selectDynamic('BankID','ბანკი','banks'), field('PaymentDate','თარიღი','date'), field('BankOutAmount','ბანკიდან გასული თანხა','number'), field('BankFee','საკომისიო','number'), selectField('BankCurrency','ბანკის ვალუტა',['USD','CNY','GEL','EUR','TRY']), field('ReflectedCNY','მომწოდებელზე ასახული CNY','number'), field('Comment','კომენტარი','textarea','full')], 'submitPayment');
+  bindDepositCalculator();
 }
 
-function formShell(title, fields, submitName) {
-  return `<h3>${title}</h3><div class="form-grid">${fields.join('')}</div><div class="modal-actions"><button type="button" class="ghost-btn" onclick="closeModals()">დახურვა</button><button type="button" class="liquid-btn" onclick="${submitName}()">შენახვა</button></div>`;
+function bindDepositCalculator() {
+  ['Amount','FeePercent','Fee'].forEach(id => document.addEventListener('input', e => { if (e.target?.id === id) calculateDeposit(id); }));
 }
-function field(id,label,type='text',cls='') { return `<div class="field ${cls}"><label>${label}</label>${type==='textarea'?`<textarea id="${id}" rows="3"></textarea>`:`<input id="${id}" type="${type}" />`}</div>`; }
+function calculateDeposit(changedId = '') {
+  const amountEl = $('#Amount'), percentEl = $('#FeePercent'), feeEl = $('#Fee'), netEl = $('#NetTransferAmount');
+  if (!amountEl || !feeEl || !netEl) return;
+  const amount = Number(amountEl.value || 0);
+  let fee = Number(feeEl.value || 0);
+  if (changedId === 'FeePercent') {
+    const percent = Number(percentEl.value || 0);
+    fee = amount * percent / 100;
+    feeEl.value = fee ? fee.toFixed(2) : '';
+  }
+  netEl.value = Math.max(amount - fee, 0).toFixed(2);
+}
+
+function formShell(title, fields, submitName) { return `<h3>${title}</h3><div class="form-grid">${fields.join('')}</div><div class="modal-actions"><button type="button" class="ghost-btn" onclick="closeModals()">დახურვა</button><button type="button" class="liquid-btn" onclick="${submitName}()">შენახვა</button></div>`; }
+function field(id,label,type='text',cls='') { return `<div class="field ${cls}"><label>${label}</label>${type==='textarea'?`<textarea id="${id}" rows="3"></textarea>`:`<input id="${id}" type="${type}" step="any" />`}</div>`; }
 function selectField(id,label,opts) { return `<div class="field"><label>${label}</label><select id="${id}">${opts.map(o=>`<option value="${o}">${o}</option>`).join('')}</select></div>`; }
 function selectDynamic(id,label,source,optional=false) { return `<div class="field"><label>${label}</label><select id="${id}" data-source="${source}" data-optional="${optional?'1':'0'}"></select></div>`; }
 
@@ -269,10 +301,7 @@ function refreshSelects() {
     if (source === 'suppliers') rows = state.data?.suppliers || [];
     if (source === 'banks') rows = state.data?.banks || [];
     if (source === 'shipmentGroups') rows = state.data?.shipmentGroups || [];
-    const opts = rows.map(r => {
-      const label = r.SupplierName || r.BankName || r.GroupName;
-      return `<option value="${r.ID}">${label}</option>`;
-    }).join('');
+    const opts = rows.map(r => `<option value="${r.ID}">${r.SupplierName || r.BankName || r.GroupName}</option>`).join('');
     sel.innerHTML = (optional ? '<option value="">ჯგუფის გარეშე</option>' : '') + opts;
   });
 }
@@ -287,7 +316,7 @@ function openGoodsForm(id='') { state.editing.goods=id; openModal('goodsModal');
 function openShipmentForm(id='') { state.editing.shipment=id; openModal('shipmentModal'); const row=(state.data?.shipmentGroups||[]).find(x=>x.ID===id)||{SentDate:today()}; fillForm('shipmentForm', row); }
 function openChargeForm(id='') { state.editing.charge=id; openModal('chargeModal'); const row=(state.data?.charges||[]).find(x=>x.ID===id)||{ChargeDate:today()}; fillForm('chargeForm', row); }
 function openBankForm(id='') { state.editing.bank=id; openModal('bankModal'); const row=(state.data?.banks||[]).find(x=>x.ID===id)||{}; fillForm('bankForm', row); }
-function openDepositForm(id='') { state.editing.deposit=id; openModal('depositModal'); const row=(state.data?.bankDeposits||[]).find(x=>x.ID===id)||{DepositDate:today()}; fillForm('depositForm', row); }
+function openDepositForm(id='') { state.editing.deposit=id; openModal('depositModal'); const row=(state.data?.bankDeposits||[]).find(x=>x.ID===id)||{DepositDate:today()}; fillForm('depositForm', row); calculateDeposit(); }
 function openPaymentForm(id='') { state.editing.payment=id; openModal('paymentModal'); const row=(state.data?.supplierPayments||[]).find(x=>x.ID===id)||{PaymentDate:today()}; fillForm('paymentForm', row); }
 
 async function submitSupplier(){ await saveAction(state.editing.supplier?'updateSupplier':'createSupplier', collectForm('supplierForm'), state.editing.supplier); }
@@ -295,7 +324,7 @@ async function submitGoods(){ await saveAction(state.editing.goods?'updateGoods'
 async function submitShipment(){ await saveAction(state.editing.shipment?'updateShipmentGroup':'createShipmentGroup', collectForm('shipmentForm'), state.editing.shipment); }
 async function submitCharge(){ await saveAction(state.editing.charge?'updateCharge':'createCharge', collectForm('chargeForm'), state.editing.charge); }
 async function submitBank(){ await saveAction(state.editing.bank?'updateBank':'createBank', collectForm('bankForm'), state.editing.bank); }
-async function submitDeposit(){ await saveAction(state.editing.deposit?'updateBankDeposit':'createBankDeposit', collectForm('depositForm'), state.editing.deposit); }
+async function submitDeposit(){ calculateDeposit(); await saveAction(state.editing.deposit?'updateBankDeposit':'createBankDeposit', collectForm('depositForm'), state.editing.deposit); }
 async function submitPayment(){ await saveAction(state.editing.payment?'updateSupplierPayment':'createSupplierPayment', collectForm('paymentForm'), state.editing.payment); }
 
 async function saveAction(action, data, id='', status='') {
@@ -308,11 +337,7 @@ async function saveAction(action, data, id='', status='') {
     toast('შენახულია');
   } catch (err) { toast('შეცდომა: ' + err.message); setSync('შეცდომა'); }
 }
-
-async function deleteRow(action, id) {
-  if (!confirm('ნამდვილად გინდა წაშლა?')) return;
-  await saveAction(action, {}, id);
-}
+async function deleteRow(action, id) { if (!confirm('ნამდვილად გინდა წაშლა?')) return; await saveAction(action, {}, id); }
 
 async function openSupplierCard(id) {
   try {
@@ -324,6 +349,7 @@ async function openSupplierCard(id) {
         <div class="stat-card"><p>საწყისი</p><strong>${money(sum.openingBalanceCNY)} CNY</strong></div>
         <div class="stat-card"><p>დარიცხვა</p><strong>${money(sum.totalChargesCNY)} CNY</strong></div>
         <div class="stat-card"><p>გადარიცხვა</p><strong>${money(sum.totalPaymentsCNY)} CNY</strong></div>
+        <div class="stat-card"><p>მიღებული საქონელი</p><strong>${money(sum.totalGoodsReceivedCNY)} CNY</strong></div>
         <div class="stat-card"><p>მიმდინარე ნაშთი</p><strong class="${balanceClass(sum.balanceCNY)}">${money(sum.balanceCNY)} CNY</strong></div>
       </div>
       <div class="panel"><h3>ისტორია</h3><div class="mini-list">${emptyOr(data.history.map(h=>`<div class="mini-row"><div><b>${h.type}</b><div class="muted">${h.productName || h.bankName || h.status || ''} ${h.comment || ''}</div></div><span>${h.date || ''}</span></div>`))}</div></div>`;
