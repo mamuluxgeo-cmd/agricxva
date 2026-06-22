@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ka">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Supplier Flow Control</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand-block">
+        <div class="logo-mark">SF</div>
+        <div>
+          <h1>Supplier Flow</h1>
+          <p>Koncept / Brand House</p>
+        </div>
+      </div>
+
+      <div class="company-switch">
+        <button class="company-btn active" data-company="Brand House">Brand House</button>
+        <button class="company-btn" data-company="Koncept">Koncept</button>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-btn active" data-page="dashboard">მთავარი</button>
+        <button class="nav-btn" data-page="suppliers">მომწოდებლები</button>
+        <button class="nav-btn" data-page="goods">საქონელი</button>
+        <button class="nav-btn" data-page="charges">დარიცხვები</button>
+        <button class="nav-btn" data-page="banks">ბანკები</button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button id="refreshBtn" class="ghost-btn">განახლება</button>
+        <span id="syncStatus">მზადაა</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">მომწოდებლების მართვის სისტემა</p>
+          <h2 id="pageTitle">მთავარი</h2>
+        </div>
+        <div class="top-actions">
+          <button class="liquid-btn" id="quickSupplierBtn">+ მომწოდებელი</button>
+          <button class="liquid-btn secondary" id="quickGoodsBtn">+ საქონელი</button>
+        </div>
+      </header>
+
+      <section id="dashboard" class="page active">
+        <div class="cards-grid" id="dashboardCards"></div>
+        <div class="panel split-panel">
+          <div>
+            <div class="panel-head">
+              <h3>მომწოდებლების ბალანსი</h3>
+            </div>
+            <div id="supplierBalanceList" class="mini-list"></div>
+          </div>
+          <div>
+            <div class="panel-head">
+              <h3>ბანკების ბალანსი</h3>
+            </div>
+            <div id="bankBalanceList" class="mini-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="suppliers" class="page">
+        <div class="toolbar">
+          <input id="supplierSearch" class="search" placeholder="მომწოდებლის ძებნა..." />
+          <button class="liquid-btn" data-open="supplierModal">+ მომწოდებლის დამატება</button>
+        </div>
+        <div id="suppliersGrid" class="supplier-grid"></div>
+      </section>
+
+      <section id="goods" class="page">
+        <div class="toolbar">
+          <button class="liquid-btn" data-open="goodsModal">+ საქონლის დამატება</button>
+          <button class="ghost-btn" data-open="shipmentModal">+ გზავნილის ჯგუფი</button>
+        </div>
+        <div class="kanban" id="goodsKanban"></div>
+      </section>
+
+      <section id="charges" class="page">
+        <div class="toolbar">
+          <button class="liquid-btn" data-open="chargeModal">+ დარიცხვა</button>
+        </div>
+        <div class="table-card"><table><thead><tr><th>თარიღი</th><th>მომწოდებელი</th><th>თანხა CNY</th><th>კომენტარი</th><th></th></tr></thead><tbody id="chargesTable"></tbody></table></div>
+      </section>
+
+      <section id="banks" class="page">
+        <div class="toolbar">
+          <button class="liquid-btn" data-open="bankModal">+ ბანკი</button>
+          <button class="ghost-btn" data-open="depositModal">+ ბანკში ჩარიცხვა</button>
+          <button class="ghost-btn" data-open="paymentModal">+ მომწოდებელზე გადარიცხვა</button>
+        </div>
+        <div id="banksGrid" class="cards-grid"></div>
+        <div class="panel"><h3>ბანკის ოპერაციები</h3><div id="bankOperations" class="mini-list"></div></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="supplierModal" class="modal"><form method="dialog" class="modal-card" id="supplierForm"></form></dialog>
+  <dialog id="goodsModal" class="modal"><form method="dialog" class="modal-card" id="goodsForm"></form></dialog>
+  <dialog id="shipmentModal" class="modal"><form method="dialog" class="modal-card" id="shipmentForm"></form></dialog>
+  <dialog id="chargeModal" class="modal"><form method="dialog" class="modal-card" id="chargeForm"></form></dialog>
+  <dialog id="bankModal" class="modal"><form method="dialog" class="modal-card" id="bankForm"></form></dialog>
+  <dialog id="depositModal" class="modal"><form method="dialog" class="modal-card" id="depositForm"></form></dialog>
+  <dialog id="paymentModal" class="modal"><form method="dialog" class="modal-card" id="paymentForm"></form></dialog>
+  <dialog id="supplierCardModal" class="modal wide"><div class="modal-card" id="supplierCardContent"></div></dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
