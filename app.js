@@ -71,11 +71,11 @@ async function apiGet(params = {}) {
   return json.data;
 }
 
-async function apiPost(action, data = {}, id = '') {
+async function apiPost(action, data = {}, id = '', status = '') {
   const res = await fetch(API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action, data, id }),
+    body: JSON.stringify({ action, data, id, status }),
   });
   const json = await res.json();
   if (!json.success) throw new Error(json.error?.message || 'API error');
@@ -331,7 +331,7 @@ async function saveAction(action, data, id='', status='') {
   try {
     setSync('ინახება...');
     const payload = status ? { ...data, Status: status } : data;
-    await apiPost(action, payload, id);
+    await apiPost(action, payload, id, status);
     closeModals();
     await loadData(true);
     toast('შენახულია');
