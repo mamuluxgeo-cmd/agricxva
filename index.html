@@ -26,6 +26,7 @@
         <button class="nav-btn active" data-page="dashboard">მთავარი</button>
         <button class="nav-btn" data-page="suppliers">მომწოდებლები</button>
         <button class="nav-btn" data-page="goods">საქონელი</button>
+        <button class="nav-btn" data-page="statistics">სტატისტიკა</button>
         <button class="nav-btn" data-page="charges">დარიცხვები</button>
         <button class="nav-btn" data-page="banks">ბანკები</button>
       </nav>
@@ -81,6 +82,37 @@
         <div class="kanban" id="goodsKanban"></div>
       </section>
 
+      <section id="statistics" class="page">
+        <div class="stats-layout">
+          <div class="stats-box">
+            <h3>გზავნილის ნომრით</h3>
+            <div class="stats-filter">
+              <label>აირჩიე ნომერი 1–20</label>
+              <select id="statsShipmentNo"></select>
+            </div>
+            <div id="statsShipmentResult"></div>
+          </div>
+
+          <div class="stats-box">
+            <h3>მომწოდებლის მიხედვით</h3>
+            <div class="stats-filter">
+              <label>აირჩიე მომწოდებელი</label>
+              <select id="statsSupplier"></select>
+            </div>
+            <div id="statsSupplierResult"></div>
+          </div>
+
+          <div class="stats-box">
+            <h3>ბანკის მიხედვით</h3>
+            <div class="stats-filter">
+              <label>აირჩიე ბანკი</label>
+              <select id="statsBank"></select>
+            </div>
+            <div id="statsBankResult"></div>
+          </div>
+        </div>
+      </section>
+
       <section id="charges" class="page">
         <div class="toolbar">
           <button class="liquid-btn" data-open="chargeModal">+ დარიცხვა</button>
@@ -112,5 +144,6 @@
   <script src="app.js"></script>
   <script src="supplier-transit-patch.js?v=2"></script>
   <script src="shipment-number-card-fix.js?v=1"></script>
+  <script src="stats-panel.js?v=1"></script>
 </body>
 </html>
