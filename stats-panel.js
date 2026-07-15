@@ -9,6 +9,8 @@
     const num = Number(raw);
     return num >= 1 && num <= 20 ? num : '';
   }
+  function opDate(v){ return String(v || '').replace('T',' ').replace('.000Z',''); }
+  function sortByDateAsc(rows){ return rows.sort((a,b)=>String(a.date || '').localeCompare(String(b.date || ''))); }
   function injectStatsStyles(){
     if(document.getElementById('statsPanelStyles')) return;
     const style = document.createElement('style');
@@ -27,7 +29,16 @@
       .stats-list{display:grid;gap:8px;margin-top:12px;max-height:420px;overflow:auto;padding-right:4px}
       .stats-item{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;background:white;border:1px solid var(--line);border-radius:16px;padding:12px}
       .stats-item b{display:block}.stats-item span{white-space:nowrap;font-weight:900}
-      @media(max-width:1100px){.stats-layout{grid-template-columns:1fr}.stats-cards{grid-template-columns:1fr}}
+      .stats-history-title{margin:18px 0 8px;font-size:16px;font-weight:950;color:#0f172a}
+      .stats-operation{display:grid;grid-template-columns:96px 1fr auto;gap:10px;align-items:start;background:white;border:1px solid var(--line);border-radius:16px;padding:12px}
+      .stats-operation .op-date{font-size:12px;color:var(--muted);font-weight:800;line-height:1.35}
+      .stats-operation .op-type{font-weight:950;color:#0f172a}
+      .stats-operation .op-meta{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.35}
+      .stats-operation .op-amount{font-weight:950;white-space:nowrap;color:#0f172a}
+      .stats-operation.charge{border-left:4px solid #7c3aed}
+      .stats-operation.payment{border-left:4px solid #06b6d4}
+      .stats-operation.goods{border-left:4px solid #f59e0b}
+      @media(max-width:1100px){.stats-layout{grid-template-columns:1fr}.stats-cards{grid-template-columns:1fr}.stats-operation{grid-template-columns:1fr}}
     `;
     document.head.appendChild(style);
   }
@@ -63,6 +74,50 @@
       <div class="stats-list">${rows.length ? rows.map(g=>`<div class="stats-item"><div><b>${g.ProductName || 'საქონელი'}</b><div class="muted">${g.SupplierName || '-'} · ${fmt(g.AmountCNY)} CNY · ${fmt(g.Boxes)} ყუთი</div></div><span>№${no}</span></div>`).join('') : '<div class="empty">ამ ნომერზე ჩანაწერი არ არის</div>'}</div>
     ` : '<div class="empty">აირჩიე გზავნილის ნომერი</div>';
   }
+  function supplierOperations(id, goods, charges, payments){
+    const ops = [];
+    charges.forEach(c => ops.push({
+      kind:'charge',
+      date:c.ChargeDate || c.CreatedAt,
+      type:'დარიცხვა',
+      title:c.Comment || 'მომწოდებელზე დარიცხვა',
+      meta:'მიწოდებული თანხა / დარიცხვა',
+      amount:`+${fmt(c.AmountCNY)} CNY`
+    }));
+    payments.forEach(p => ops.push({
+      kind:'payment',
+      date:p.PaymentDate || p.CreatedAt,
+      type:'გადარიცხვა',
+      title:p.BankName || 'ბანკი',
+      meta:`მომწოდებელზე აისახა ${fmt(p.ReflectedCNY)} CNY · ბანკიდან გავიდა ${fmt(p.BankTotalOut)} ${p.BankCurrency || ''}${p.Comment ? ' · ' + p.Comment : ''}`,
+      amount:`+${fmt(p.ReflectedCNY)} CNY`
+    }));
+    goods.forEach(g => {
+      ops.push({
+        kind:'goods',
+        date:g.OrderDate || g.CreatedAt,
+        type:'საქონელი / შეკვეთა',
+        title:g.ProductName || 'საქონელი',
+        meta:`სტატუსი: ${g.Status || '-'} · №${getShipNo(g) || '-'} · გამოგზავნილი ${fmt(g.AmountCNY)} CNY · ${fmt(g.Boxes)} ყუთი${g.Comment ? ' · ' + g.Comment : ''}`,
+        amount:`${fmt(g.AmountCNY)} CNY`
+      });
+      if(g.SentDate){
+        ops.push({
+          kind:'goods', date:g.SentDate, type:'საქონელი / გამოგზავნა', title:g.ProductName || 'საქონელი',
+          meta:`გზავნილის №${getShipNo(g) || '-'} · გამოგზავნილი ${fmt(g.AmountCNY)} CNY · ${fmt(g.Boxes)} ყუთი`,
+          amount:`${fmt(g.AmountCNY)} CNY`
+        });
+      }
+      if(g.ReceivedDate){
+        ops.push({
+          kind:'goods', date:g.ReceivedDate, type:g.Status === 'დასრულებულია' ? 'საქონელი / დასრულება' : 'საქონელი / მიღება', title:g.ProductName || 'საქონელი',
+          meta:`ფაქტიურად მიღებული ${fmt(g.ReceivedAmountCNY || g.AmountCNY)} CNY · ${fmt(g.ReceivedBoxes || g.Boxes)} ყუთი${g.DifferenceComment ? ' · ' + g.DifferenceComment : ''}`,
+          amount:`-${fmt(g.ReceivedAmountCNY || g.AmountCNY)} CNY`
+        });
+      }
+    });
+    return sortByDateAsc(ops);
+  }
   function renderSupplierStats(){
     const id = document.getElementById('statsSupplier')?.value || '';
     const box = document.getElementById('statsSupplierResult');
@@ -78,6 +133,7 @@
     const transitBoxes = transit.reduce((a,g)=>a+n(g.Boxes),0);
     const receivedAmount = received.reduce((a,g)=>a+n(g.ReceivedAmountCNY || g.AmountCNY),0);
     const receivedBoxes = received.reduce((a,g)=>a+n(g.ReceivedBoxes || g.Boxes),0);
+    const ops = supplierOperations(id, goods, charges, payments);
     box.innerHTML = `
       <div class="stats-cards">
         ${card('მიმდინარე ბალანსი', fmt(s.balanceCNY), ' CNY')}
@@ -91,6 +147,16 @@
         <div class="stats-item"><div><b>დარიცხვები</b><div class="muted">${charges.length} ჩანაწერი</div></div><span>${fmt(charges.reduce((a,c)=>a+n(c.AmountCNY),0))} CNY</span></div>
         <div class="stats-item"><div><b>გზაში</b><div class="muted">${transit.length} ჩანაწერი</div></div><span>${fmt(transitAmount)} CNY</span></div>
         <div class="stats-item"><div><b>მიღებული</b><div class="muted">${received.length} ჩანაწერი</div></div><span>${fmt(receivedAmount)} CNY</span></div>
+      </div>
+      <h3 class="stats-history-title">ოპერაციების ისტორია</h3>
+      <div class="stats-list">
+        ${ops.length ? ops.map(o => `
+          <div class="stats-operation ${o.kind}">
+            <div class="op-date">${opDate(o.date)}</div>
+            <div><div class="op-type">${o.type}</div><b>${o.title}</b><div class="op-meta">${o.meta}</div></div>
+            <div class="op-amount">${o.amount}</div>
+          </div>
+        `).join('') : '<div class="empty">ოპერაცია არ არის</div>'}
       </div>`;
   }
   function renderBankStats(){
