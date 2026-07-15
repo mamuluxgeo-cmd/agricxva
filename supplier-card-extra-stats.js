@@ -1,4 +1,4 @@
-// Extra supplier card stats: total goods in all positions + charge/goods difference
+// Extra supplier card stats: total goods in all positions + current balance/goods difference
 (function () {
   function n(v) { return Number(v || 0); }
   function m(v) { return money ? money(v) : n(v).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
@@ -23,7 +23,7 @@
       const sum = data.summary;
       const tr = typeof supplierTransitStats === 'function' ? supplierTransitStats(id) : { amountCNY: 0, boxes: 0, count: 0 };
       const gs = supplierAllGoodsStats(id);
-      const chargeGoodsDiff = n(sum.totalChargesCNY) - gs.allAmount;
+      const balanceGoodsDiff = n(sum.balanceCNY) - gs.allAmount;
       const transitRows = (state.data?.goods || []).filter(g => g.SupplierID === id && g.Status === 'გამოიგზავნა');
 
       $('#supplierCardContent').innerHTML = `
@@ -34,7 +34,7 @@
           <div class="stat-card"><p>გადარიცხვა</p><strong>${m(sum.totalPaymentsCNY)} CNY</strong></div>
           <div class="stat-card"><p>მიღებული საქონელი</p><strong>${m(sum.totalGoodsReceivedCNY)} CNY</strong></div>
           <div class="stat-card"><p>საქონელი ყველა პოზიციაზე</p><strong>${m(gs.allAmount)} CNY</strong><div class="meta">${m(gs.allBoxes)} ყუთი · ${gs.count} ჩანაწერი</div></div>
-          <div class="stat-card"><p>დარიცხვა / საქონლის სხვაობა</p><strong class="${balanceClass(chargeGoodsDiff)}">${m(chargeGoodsDiff)} CNY</strong><div class="meta">დარიცხვა - ყველა საქონელი</div></div>
+          <div class="stat-card"><p>ნაშთი / საქონლის სხვაობა</p><strong class="${balanceClass(balanceGoodsDiff)}">${m(balanceGoodsDiff)} CNY</strong><div class="meta">მიმდინარე ნაშთი - ყველა საქონელი</div></div>
           <div class="stat-card"><p>გზაში</p><strong>${m(tr.amountCNY)} CNY</strong><div class="meta">${m(tr.boxes)} ყუთი · ${tr.count} ჩანაწერი</div></div>
           <div class="stat-card"><p>მიმდინარე ნაშთი</p><strong class="${balanceClass(sum.balanceCNY)}">${m(sum.balanceCNY)} CNY</strong></div>
         </div>
