@@ -455,6 +455,7 @@ function moveGoods(id, status, data) {
     return error_('INVALID_STATUS', 'Invalid goods status');
   }
 
+  const current = getObjectById_(SHEETS.GOODS, id) || {};
   const patch = Object.assign({}, data || {});
   patch.Status = status;
 
@@ -466,9 +467,24 @@ function moveGoods(id, status, data) {
     patch.ReceivedDate = today_();
   }
 
+  const merged = Object.assign({}, current, patch);
+
   if (status === 'დასრულებულია') {
-    patch.DifferenceCNY = toNumber_(patch.ReceivedAmountCNY) - toNumber_(patch.AmountCNY);
-    patch.DifferenceBoxes = toNumber_(patch.ReceivedBoxes) - toNumber_(patch.Boxes);
+    if (patch.ReceivedAmountCNY === undefined || patch.ReceivedAmountCNY === '') {
+      patch.ReceivedAmountCNY = current.ReceivedAmountCNY || current.AmountCNY || 0;
+      merged.ReceivedAmountCNY = patch.ReceivedAmountCNY;
+    }
+    if (patch.ReceivedBoxes === undefined || patch.ReceivedBoxes === '') {
+      patch.ReceivedBoxes = current.ReceivedBoxes || current.Boxes || 0;
+      merged.ReceivedBoxes = patch.ReceivedBoxes;
+    }
+
+    const sentAmount = toNumber_(merged.AmountCNY);
+    const receivedAmount = toNumber_(merged.ReceivedAmountCNY);
+    const sentBoxes = toNumber_(merged.Boxes);
+    const receivedBoxes = toNumber_(merged.ReceivedBoxes);
+    patch.DifferenceCNY = receivedAmount - sentAmount;
+    patch.DifferenceBoxes = receivedBoxes - sentBoxes;
   }
 
   return updateGoods(id, patch);
@@ -481,16 +497,12 @@ function moveGoods(id, status, data) {
 function getAppData(company) {
   const cacheKey = 'APP_DATA_' + (company || 'ALL');
 
-  // Cache is optional. If data becomes too large, Apps Script can throw:
-  // "Argument too large: value". In that case the app must continue without cache.
   try {
     const cached = CacheService.getScriptCache().get(cacheKey);
     if (cached) {
       return ok_(JSON.parse(cached), true);
     }
-  } catch (err) {
-    // Ignore cache read errors.
-  }
+  } catch (err) {}
 
   const suppliers = filterCompany_(activeRows_(SHEETS.SUPPLIERS), company);
   const goods = filterCompany_(activeRows_(SHEETS.GOODS), company);
@@ -536,13 +548,10 @@ function getAppData(company) {
 
   try {
     const cacheValue = JSON.stringify(data);
-    // Apps Script cache values have a size limit. Keep cache only for smaller responses.
     if (cacheValue.length < 90000) {
       CacheService.getScriptCache().put(cacheKey, cacheValue, CONFIG.CACHE_SECONDS);
     }
-  } catch (err) {
-    // Ignore cache write errors so the website never breaks because of cache size.
-  }
+  } catch (err) {}
 
   return ok_(data, false);
 }
@@ -559,14 +568,7 @@ function getSupplierCard(supplierId) {
   const summary = buildSupplierSummary_(supplier, goods, charges, payments);
   const history = buildSupplierHistory_(supplier, goods, charges, payments);
 
-  return ok_({
-    supplier,
-    summary,
-    goods,
-    charges,
-    payments,
-    history,
-  });
+  return ok_({ supplier, summary, goods, charges, payments, history });
 }
 
 /*******************************************************
@@ -618,21 +620,7 @@ function buildBankSummary_(bank, deposits, payments) {
 
   const balance = opening + depositedNet - totalOut;
 
-  return {
-    bankId: bank.ID,
-    company: bank.Company,
-    bankName: bank.BankName,
-    accountName: bank.AccountName,
-    currency: bank.Currency,
-    status: bank.Status,
-    openingBalance: opening,
-    depositedNet,
-    depositFees,
-    supplierOut,
-    paymentFees,
-    totalOut,
-    balance,
-  };
+  return { bankId: bank.ID, company: bank.Company, bankName: bank.BankName, accountName: bank.AccountName, currency: bank.Currency, status: bank.Status, openingBalance: opening, depositedNet, depositFees, supplierOut, paymentFees, totalOut, balance };
 }
 
 function enrichShipmentGroups_(groups, goods) {
@@ -653,49 +641,15 @@ function enrichShipmentGroups_(groups, goods) {
 function buildSupplierHistory_(supplier, goods, charges, payments) {
   const rows = [];
 
-  rows.push({
-    date: supplier.CreatedAt,
-    type: 'საწყისი ბალანსი',
-    amountCNY: supplier.OpeningBalanceSigned,
-    comment: supplier.Comment || '',
-  });
+  rows.push({ date: supplier.CreatedAt, type: 'საწყისი ბალანსი', amountCNY: supplier.OpeningBalanceSigned, comment: supplier.Comment || '' });
 
-  goods.forEach(g => rows.push({
-    date: g.UpdatedAt || g.CreatedAt,
-    type: 'საქონელი',
-    status: g.Status,
-    productName: g.ProductName,
-    amountCNY: g.AmountCNY,
-    differenceCNY: g.DifferenceCNY,
-    comment: g.DifferenceComment || g.Comment || '',
-  }));
+  goods.forEach(g => rows.push({ date: g.UpdatedAt || g.CreatedAt, type: 'საქონელი', status: g.Status, productName: g.ProductName, amountCNY: g.AmountCNY, differenceCNY: g.DifferenceCNY, comment: g.DifferenceComment || g.Comment || '' }));
 
-  charges.forEach(c => rows.push({
-    date: c.ChargeDate,
-    type: 'დარიცხვა',
-    amountCNY: c.AmountCNY,
-    comment: c.Comment || '',
-  }));
+  charges.forEach(c => rows.push({ date: c.ChargeDate, type: 'დარიცხვა', amountCNY: c.AmountCNY, comment: c.Comment || '' }));
 
-  payments.forEach(p => rows.push({
-    date: p.PaymentDate,
-    type: 'გადარიცხვა',
-    bankName: p.BankName,
-    bankOutAmount: p.BankOutAmount,
-    bankFee: p.BankFee,
-    reflectedCNY: p.ReflectedCNY,
-    comment: p.Comment || '',
-  }));
+  payments.forEach(p => rows.push({ date: p.PaymentDate, type: 'გადარიცხვა', bankName: p.BankName, bankOutAmount: p.BankOutAmount, bankFee: p.BankFee, reflectedCNY: p.ReflectedCNY, comment: p.Comment || '' }));
 
   return rows.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-}
-
-function goodsReceivedValue_(g) {
-  if (!g) return 0;
-  const status = String(g.Status || '');
-  if (status !== 'მიღებულია' && status !== 'დასრულებულია') return 0;
-  const received = toNumber_(g.ReceivedAmountCNY);
-  return received || toNumber_(g.AmountCNY);
 }
 
 /*******************************************************
@@ -703,179 +657,55 @@ function goodsReceivedValue_(g) {
  *******************************************************/
 
 function normalizeSupplier_(data, partial) {
-  const opening = partial && data.OpeningBalance === undefined ? undefined : toNumber_(data.OpeningBalance);
+  const opening = toNumber_(data.OpeningBalance);
   const type = data.OpeningBalanceType || '';
   let signed = data.OpeningBalanceSigned;
 
-  if (!partial && (signed === undefined || signed === '')) {
-    signed = type === 'მინუსი' ? -Math.abs(opening) : Math.abs(opening);
-  } else if (!partial) {
-    signed = toNumber_(signed);
-  } else if (partial && data.OpeningBalance !== undefined && (signed === undefined || signed === '')) {
-    signed = type === 'მინუსი' ? -Math.abs(toNumber_(data.OpeningBalance)) : Math.abs(toNumber_(data.OpeningBalance));
-  }
+  if (signed === undefined || signed === '') signed = type === 'მინუსი' ? -Math.abs(opening) : Math.abs(opening);
 
-  return cleanObject_({
-    Company: data.Company,
-    SupplierName: data.SupplierName,
-    Country: data.Country,
-    Category: data.Category,
-    Currency: data.Currency || (partial ? undefined : 'CNY'),
-    Status: data.Status || (partial ? undefined : 'აქტიური'),
-    OpeningBalance: opening,
-    OpeningBalanceType: type || (partial ? undefined : 'პლიუსი'),
-    OpeningBalanceSigned: signed,
-    Comment: data.Comment,
-    UpdatedAt: now_(),
-    CreatedAt: partial ? undefined : now_(),
-    Deleted: partial ? undefined : false,
-  }, partial);
+  return cleanObject_({ Company: data.Company, SupplierName: data.SupplierName, Country: data.Country, Category: data.Category, Currency: data.Currency || 'CNY', Status: data.Status || 'აქტიური', OpeningBalance: opening, OpeningBalanceType: type || 'პლიუსი', OpeningBalanceSigned: signed, Comment: data.Comment, UpdatedAt: now_(), CreatedAt: partial ? undefined : now_(), Deleted: partial ? undefined : false }, partial);
 }
 
 function normalizeGoods_(data, partial) {
-  const hasAmount = Object.prototype.hasOwnProperty.call(data, 'AmountCNY');
-  const hasBoxes = Object.prototype.hasOwnProperty.call(data, 'Boxes');
-  const hasReceivedAmount = Object.prototype.hasOwnProperty.call(data, 'ReceivedAmountCNY');
-  const hasReceivedBoxes = Object.prototype.hasOwnProperty.call(data, 'ReceivedBoxes');
-
-  const amount = hasAmount ? toNumber_(data.AmountCNY) : undefined;
-  const boxes = hasBoxes ? toNumber_(data.Boxes) : undefined;
-  const receivedAmount = hasReceivedAmount ? toNumber_(data.ReceivedAmountCNY) : undefined;
-  const receivedBoxes = hasReceivedBoxes ? toNumber_(data.ReceivedBoxes) : undefined;
+  const amount = data.AmountCNY === undefined ? undefined : toNumber_(data.AmountCNY);
+  const boxes = data.Boxes === undefined ? undefined : toNumber_(data.Boxes);
+  const receivedAmount = data.ReceivedAmountCNY === undefined ? undefined : (data.ReceivedAmountCNY === '' ? '' : toNumber_(data.ReceivedAmountCNY));
+  const receivedBoxes = data.ReceivedBoxes === undefined ? undefined : (data.ReceivedBoxes === '' ? '' : toNumber_(data.ReceivedBoxes));
 
   let diffCNY = data.DifferenceCNY;
   let diffBoxes = data.DifferenceBoxes;
+  if (receivedAmount !== undefined && receivedAmount !== '' && amount !== undefined && amount !== '') diffCNY = toNumber_(receivedAmount) - toNumber_(amount);
+  if (receivedBoxes !== undefined && receivedBoxes !== '' && boxes !== undefined && boxes !== '') diffBoxes = toNumber_(receivedBoxes) - toNumber_(boxes);
 
-  if (hasReceivedAmount && hasAmount) diffCNY = toNumber_(receivedAmount) - toNumber_(amount);
-  if (hasReceivedBoxes && hasBoxes) diffBoxes = toNumber_(receivedBoxes) - toNumber_(boxes);
-
-  return cleanObject_({
-    Company: data.Company,
-    SupplierID: data.SupplierID,
-    SupplierName: data.SupplierName,
-    ProductName: data.ProductName,
-    AmountCNY: amount,
-    Boxes: boxes,
-    Status: data.Status || (partial ? undefined : 'შეკვეთა'),
-    ShipmentGroupID: data.ShipmentGroupID,
-    ShipmentGroupName: data.ShipmentGroupName,
-    OrderDate: data.OrderDate || (partial ? undefined : today_()),
-    SentDate: data.SentDate,
-    ExpectedArrivalDate: data.ExpectedArrivalDate,
-    ReceivedDate: data.ReceivedDate,
-    ReceivedAmountCNY: receivedAmount,
-    ReceivedBoxes: receivedBoxes,
-    DifferenceCNY: diffCNY,
-    DifferenceBoxes: diffBoxes,
-    DifferenceComment: data.DifferenceComment,
-    Comment: data.Comment,
-    UpdatedAt: now_(),
-    CreatedAt: partial ? undefined : now_(),
-    Deleted: partial ? undefined : false,
-  }, partial);
+  return cleanObject_({ Company: data.Company, SupplierID: data.SupplierID, SupplierName: data.SupplierName, ProductName: data.ProductName, AmountCNY: amount, Boxes: boxes, Status: data.Status || (partial ? undefined : 'შეკვეთა'), ShipmentGroupID: data.ShipmentGroupID, ShipmentGroupName: data.ShipmentGroupName, OrderDate: data.OrderDate || (partial ? undefined : today_()), SentDate: data.SentDate, ExpectedArrivalDate: data.ExpectedArrivalDate, ReceivedDate: data.ReceivedDate, ReceivedAmountCNY: receivedAmount, ReceivedBoxes: receivedBoxes, DifferenceCNY: diffCNY, DifferenceBoxes: diffBoxes, DifferenceComment: data.DifferenceComment, Comment: data.Comment, UpdatedAt: now_(), CreatedAt: partial ? undefined : now_(), Deleted: partial ? undefined : false }, partial);
 }
 
 function normalizeShipmentGroup_(data, partial) {
-  return cleanObject_({
-    Company: data.Company,
-    GroupName: data.GroupName,
-    OriginCountry: data.OriginCountry,
-    SentDate: data.SentDate,
-    ExpectedArrivalDate: data.ExpectedArrivalDate,
-    Status: data.Status || 'გზაში',
-    Comment: data.Comment,
-    UpdatedAt: now_(),
-    CreatedAt: partial ? undefined : now_(),
-    Deleted: partial ? undefined : false,
-  }, partial);
+  return cleanObject_({ Company: data.Company, GroupName: data.GroupName, OriginCountry: data.OriginCountry, SentDate: data.SentDate, ExpectedArrivalDate: data.ExpectedArrivalDate, Status: data.Status || 'გზაში', Comment: data.Comment, UpdatedAt: now_(), CreatedAt: partial ? undefined : now_(), Deleted: partial ? undefined : false }, partial);
 }
 
 function normalizeCharge_(data, partial) {
-  return cleanObject_({
-    Company: data.Company,
-    SupplierID: data.SupplierID,
-    SupplierName: data.SupplierName,
-    ChargeDate: data.ChargeDate || today_(),
-    AmountCNY: partial && data.AmountCNY === undefined ? undefined : toNumber_(data.AmountCNY),
-    Comment: data.Comment,
-    UpdatedAt: now_(),
-    CreatedAt: partial ? undefined : now_(),
-    Deleted: partial ? undefined : false,
-  }, partial);
+  return cleanObject_({ Company: data.Company, SupplierID: data.SupplierID, SupplierName: data.SupplierName, ChargeDate: data.ChargeDate || today_(), AmountCNY: toNumber_(data.AmountCNY), Comment: data.Comment, UpdatedAt: now_(), CreatedAt: partial ? undefined : now_(), Deleted: partial ? undefined : false }, partial);
 }
 
 function normalizeBank_(data, partial) {
-  return cleanObject_({
-    Company: data.Company,
-    BankName: data.BankName,
-    AccountName: data.AccountName,
-    Currency: data.Currency || 'USD',
-    OpeningBalance: partial && data.OpeningBalance === undefined ? undefined : toNumber_(data.OpeningBalance),
-    Status: data.Status || 'აქტიური',
-    Comment: data.Comment,
-    UpdatedAt: now_(),
-    CreatedAt: partial ? undefined : now_(),
-    Deleted: partial ? undefined : false,
-  }, partial);
+  return cleanObject_({ Company: data.Company, BankName: data.BankName, AccountName: data.AccountName, Currency: data.Currency || 'USD', OpeningBalance: toNumber_(data.OpeningBalance), Status: data.Status || 'აქტიური', Comment: data.Comment, UpdatedAt: now_(), CreatedAt: partial ? undefined : now_(), Deleted: partial ? undefined : false }, partial);
 }
 
 function normalizeBankDeposit_(data, partial) {
-  const hasAmount = Object.prototype.hasOwnProperty.call(data, 'Amount');
-  const hasFee = Object.prototype.hasOwnProperty.call(data, 'Fee');
-  const hasFeePercent = Object.prototype.hasOwnProperty.call(data, 'FeePercent');
-  const hasNetTransfer = Object.prototype.hasOwnProperty.call(data, 'NetTransferAmount');
-  const hasNetAmount = Object.prototype.hasOwnProperty.call(data, 'NetAmount');
-
-  const amount = hasAmount ? toNumber_(data.Amount) : undefined;
-  const feePercent = hasFeePercent ? toNumber_(data.FeePercent) : undefined;
-  let fee = hasFee ? toNumber_(data.Fee) : undefined;
-
-  if (hasAmount && hasFeePercent && !hasFee) {
-    fee = amount * feePercent / 100;
-  }
-
-  const netTransfer = hasNetTransfer ? toNumber_(data.NetTransferAmount) : (hasAmount ? amount - toNumber_(fee) : undefined);
-  const netAmount = hasNetAmount ? toNumber_(data.NetAmount) : netTransfer;
-
-  return cleanObject_({
-    Company: data.Company,
-    BankID: data.BankID,
-    BankName: data.BankName,
-    DepositDate: data.DepositDate || today_(),
-    Amount: amount,
-    TransferCurrency: data.TransferCurrency || data.Currency || 'USD',
-    FeePercent: feePercent,
-    Fee: fee,
-    NetTransferAmount: netTransfer,
-    NetAmount: netAmount,
-    Currency: data.Currency || data.BankCurrency || 'CNY',
-    Comment: data.Comment,
-    UpdatedAt: now_(),
-    CreatedAt: partial ? undefined : now_(),
-    Deleted: partial ? undefined : false,
-  }, partial);
+  const amount = toNumber_(data.Amount);
+  let fee = toNumber_(data.Fee);
+  const feePercent = toNumber_(data.FeePercent);
+  if ((!fee || fee === 0) && feePercent) fee = amount * feePercent / 100;
+  const netTransfer = data.NetTransferAmount === undefined || data.NetTransferAmount === '' ? amount - fee : toNumber_(data.NetTransferAmount);
+  const netAmount = data.NetAmount === undefined || data.NetAmount === '' ? netTransfer : toNumber_(data.NetAmount);
+  return cleanObject_({ Company: data.Company, BankID: data.BankID, BankName: data.BankName, DepositDate: data.DepositDate || today_(), Amount: amount, TransferCurrency: data.TransferCurrency || data.Currency || 'USD', FeePercent: feePercent, Fee: fee, NetTransferAmount: netTransfer, NetAmount: netAmount, Currency: data.Currency || 'CNY', Comment: data.Comment, UpdatedAt: now_(), CreatedAt: partial ? undefined : now_(), Deleted: partial ? undefined : false }, partial);
 }
 
 function normalizeSupplierPayment_(data, partial) {
-  const out = partial && data.BankOutAmount === undefined ? undefined : toNumber_(data.BankOutAmount);
-  const fee = partial && data.BankFee === undefined ? undefined : toNumber_(data.BankFee);
-  return cleanObject_({
-    Company: data.Company,
-    SupplierID: data.SupplierID,
-    SupplierName: data.SupplierName,
-    BankID: data.BankID,
-    BankName: data.BankName,
-    PaymentDate: data.PaymentDate || today_(),
-    BankOutAmount: out,
-    BankFee: fee,
-    BankTotalOut: (out === undefined && fee === undefined) ? undefined : toNumber_(out) + toNumber_(fee),
-    BankCurrency: data.BankCurrency || 'USD',
-    ReflectedCNY: partial && data.ReflectedCNY === undefined ? undefined : toNumber_(data.ReflectedCNY),
-    Comment: data.Comment,
-    UpdatedAt: now_(),
-    CreatedAt: partial ? undefined : now_(),
-    Deleted: partial ? undefined : false,
-  }, partial);
+  const out = toNumber_(data.BankOutAmount);
+  const fee = toNumber_(data.BankFee);
+  return cleanObject_({ Company: data.Company, SupplierID: data.SupplierID, SupplierName: data.SupplierName, BankID: data.BankID, BankName: data.BankName, PaymentDate: data.PaymentDate || today_(), BankOutAmount: out, BankFee: fee, BankTotalOut: out + fee, BankCurrency: data.BankCurrency || 'USD', ReflectedCNY: toNumber_(data.ReflectedCNY), Comment: data.Comment, UpdatedAt: now_(), CreatedAt: partial ? undefined : now_(), Deleted: partial ? undefined : false }, partial);
 }
 
 /*******************************************************
@@ -891,7 +721,6 @@ function appendObject_(sheetName, obj) {
 
 function updateRowById_(sheetName, id, patch) {
   if (!id) return error_('MISSING_ID', 'ID is required');
-
   const sh = getSheet_(sheetName);
   const values = sh.getDataRange().getValues();
   const headers = values[0];
@@ -904,49 +733,35 @@ function updateRowById_(sheetName, id, patch) {
         const c = headers.indexOf(key);
         if (c !== -1) sh.getRange(r + 1, c + 1).setValue(patch[key]);
       });
-
       const updatedAtCol = headers.indexOf('UpdatedAt');
       if (updatedAtCol !== -1) sh.getRange(r + 1, updatedAtCol + 1).setValue(now_());
-
       logActivity_(getCompanyFromPatchOrRow_(patch, values[r], headers), sheetName, id, 'UPDATE', '');
       clearCache_();
       return ok_({ id, updated: true });
     }
   }
-
   return error_('NOT_FOUND', 'Row not found: ' + id);
 }
 
-function softDelete_(sheetName, id) {
-  return updateRowById_(sheetName, id, { Deleted: true, UpdatedAt: now_() });
-}
+function softDelete_(sheetName, id) { return updateRowById_(sheetName, id, { Deleted: true, UpdatedAt: now_() }); }
 
 function readRows_(sheetName) {
   const sh = getSheet_(sheetName);
   const lastRow = sh.getLastRow();
   const lastCol = sh.getLastColumn();
   if (lastRow < 2 || lastCol < 1) return [];
-
   const values = sh.getRange(1, 1, lastRow, lastCol).getValues();
   const headers = values.shift();
-
-  return values
-    .filter(row => row.some(cell => cell !== ''))
-    .map(row => {
-      const obj = {};
-      headers.forEach((h, i) => obj[h] = row[i]);
-      return obj;
-    });
+  return values.filter(row => row.some(cell => cell !== '')).map(row => {
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = row[i]);
+    return obj;
+  });
 }
 
-function activeRows_(sheetName) {
-  return readRows_(sheetName).filter(r => String(r.Deleted).toLowerCase() !== 'true');
-}
-
-function getHeaders_(sheetName) {
-  const sh = getSheet_(sheetName);
-  return sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
-}
+function activeRows_(sheetName) { return readRows_(sheetName).filter(r => String(r.Deleted).toLowerCase() !== 'true'); }
+function getHeaders_(sheetName) { const sh = getSheet_(sheetName); return sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]; }
+function getObjectById_(sheetName, id) { return activeRows_(sheetName).find(r => String(r.ID) === String(id)); }
 
 /*******************************************************
  * LOOKUP HELPERS
@@ -955,186 +770,48 @@ function getHeaders_(sheetName) {
 function fillSupplierName_(row) {
   if (!row.SupplierID || row.SupplierName) return;
   const supplier = activeRows_(SHEETS.SUPPLIERS).find(s => s.ID === row.SupplierID);
-  if (supplier) {
-    row.SupplierName = supplier.SupplierName;
-    if (!row.Company) row.Company = supplier.Company;
-  }
+  if (supplier) { row.SupplierName = supplier.SupplierName; if (!row.Company) row.Company = supplier.Company; }
 }
 
 function fillBankName_(row) {
   if (!row.BankID || row.BankName) return;
   const bank = activeRows_(SHEETS.BANKS).find(b => b.ID === row.BankID);
-  if (bank) {
-    row.BankName = bank.BankName;
-    if (!row.Company) row.Company = bank.Company;
-    if (!row.Currency && bank.Currency) row.Currency = bank.Currency;
-    if (!row.BankCurrency && bank.Currency) row.BankCurrency = bank.Currency;
-  }
+  if (bank) { row.BankName = bank.BankName; if (!row.Company) row.Company = bank.Company; if (!row.Currency && bank.Currency) row.Currency = bank.Currency; if (!row.BankCurrency && bank.Currency) row.BankCurrency = bank.Currency; }
 }
 
 function fillShipmentGroupName_(row) {
   if (!row.ShipmentGroupID || row.ShipmentGroupName) return;
-  const group = activeRows_(SHEETS.SHIPMENT_GROUPS).find(g => g.ID === row.ShipmentGroupID);
-  if (group) {
-    row.ShipmentGroupName = group.GroupName;
-    if (!row.Company) row.Company = group.Company;
-  }
+  row.ShipmentGroupName = String(row.ShipmentGroupID);
 }
 
 /*******************************************************
  * GENERAL HELPERS
  *******************************************************/
 
-function getSpreadsheet_() {
-  return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-}
-
-function getSheet_(name) {
-  const sh = getSpreadsheet_().getSheetByName(name);
-  if (!sh) throw new Error('Sheet not found: ' + name + '. Run setupDatabase first.');
-  return sh;
-}
-
-function getOrCreateSheet_(ss, name) {
-  return ss.getSheetByName(name) || ss.insertSheet(name);
-}
-
-function parseBody_(e) {
-  if (!e || !e.postData || !e.postData.contents) return {};
-  return JSON.parse(e.postData.contents);
-}
-
-function getParam_(e, key, fallback) {
-  return e && e.parameter && e.parameter[key] !== undefined ? e.parameter[key] : fallback;
-}
-
-function json_(obj) {
-  return ContentService
-    .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-function ok_(data, cached) {
-  return {
-    success: true,
-    cached: !!cached,
-    data,
-  };
-}
-
-function error_(code, message, details) {
-  return {
-    success: false,
-    error: {
-      code,
-      message,
-      details: details || '',
-    },
-  };
-}
-
-function now_() {
-  return Utilities.formatDate(new Date(), CONFIG.TZ, 'yyyy-MM-dd HH:mm:ss');
-}
-
-function today_() {
-  return Utilities.formatDate(new Date(), CONFIG.TZ, 'yyyy-MM-dd');
-}
-
-function makeId_(prefix) {
-  const stamp = Utilities.formatDate(new Date(), CONFIG.TZ, 'yyyyMMddHHmmss');
-  const rand = Math.floor(Math.random() * 9000 + 1000);
-  return prefix + '-' + stamp + '-' + rand;
-}
-
-function toNumber_(value) {
-  if (value === '' || value === null || value === undefined) return 0;
-  if (typeof value === 'number') return value;
-  const cleaned = String(value).replace(',', '.').replace(/[^\d.-]/g, '');
-  const n = Number(cleaned);
-  return isNaN(n) ? 0 : n;
-}
-
-function sum_(rows, field) {
-  return rows.reduce((acc, row) => acc + toNumber_(row[field]), 0);
-}
-
-function filterCompany_(rows, company) {
-  if (!company) return rows;
-  return rows.filter(r => String(r.Company) === String(company));
-}
-
-function cleanObject_(obj, partial) {
-  const out = {};
-  Object.keys(obj).forEach(k => {
-    const v = obj[k];
-    if (partial && v === undefined) return;
-    out[k] = v === undefined ? '' : v;
-  });
-  return out;
-}
-
-function findLastDate_(rows) {
-  const dates = rows
-    .map(r => r.UpdatedAt || r.CreatedAt || r.PaymentDate || r.ChargeDate || r.ReceivedDate || r.SentDate || r.OrderDate)
-    .filter(Boolean)
-    .map(String)
-    .sort();
-  return dates.length ? dates[dates.length - 1] : '';
-}
-
-function getCompanyFromPatchOrRow_(patch, row, headers) {
-  if (patch.Company) return patch.Company;
-  const idx = headers.indexOf('Company');
-  return idx !== -1 ? row[idx] : '';
-}
-
-function logActivity_(company, entity, entityId, action, comment) {
-  try {
-    const row = {
-      ID: makeId_('LOG'),
-      Company: company || '',
-      Entity: entity,
-      EntityID: entityId,
-      Action: action,
-      Comment: comment || '',
-      CreatedAt: now_(),
-    };
-    appendObject_(SHEETS.ACTIVITY, row);
-  } catch (err) {
-    // Activity log must not block main operation.
-  }
-}
-
-function getSettings_() {
-  const rows = readRows_(SHEETS.SETTINGS);
-  const out = {};
-  rows.forEach(r => {
-    out[r.Key] = String(r.Value || '').split(',').map(x => x.trim()).filter(Boolean);
-  });
-  return out;
-}
-
-function clearCache_() {
-  try {
-    const cache = CacheService.getScriptCache();
-    cache.remove('APP_DATA_ALL');
-    CONFIG.DEFAULT_COMPANIES.forEach(c => cache.remove('APP_DATA_' + c));
-  } catch (err) {
-    // Ignore cache errors.
-  }
-  return ok_({ message: 'Cache cleared' });
-}
+function getSpreadsheet_() { return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID); }
+function getSheet_(name) { const sh = getSpreadsheet_().getSheetByName(name); if (!sh) throw new Error('Sheet not found: ' + name + '. Run setupDatabase first.'); return sh; }
+function getOrCreateSheet_(ss, name) { return ss.getSheetByName(name) || ss.insertSheet(name); }
+function parseBody_(e) { if (!e || !e.postData || !e.postData.contents) return {}; return JSON.parse(e.postData.contents); }
+function getParam_(e, key, fallback) { return e && e.parameter && e.parameter[key] !== undefined ? e.parameter[key] : fallback; }
+function json_(obj) { return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }
+function ok_(data, cached) { return { success: true, cached: !!cached, data }; }
+function error_(code, message, details) { return { success: false, error: { code, message, details: details || '' } }; }
+function now_() { return Utilities.formatDate(new Date(), CONFIG.TZ, 'yyyy-MM-dd HH:mm:ss'); }
+function today_() { return Utilities.formatDate(new Date(), CONFIG.TZ, 'yyyy-MM-dd'); }
+function makeId_(prefix) { const stamp = Utilities.formatDate(new Date(), CONFIG.TZ, 'yyyyMMddHHmmss'); const rand = Math.floor(Math.random() * 9000 + 1000); return prefix + '-' + stamp + '-' + rand; }
+function toNumber_(value) { if (value === '' || value === null || value === undefined) return 0; if (typeof value === 'number') return value; const cleaned = String(value).replace(',', '.').replace(/[^\d.-]/g, ''); const n = Number(cleaned); return isNaN(n) ? 0 : n; }
+function goodsReceivedValue_(g) { const status = String(g.Status || ''); if (status !== 'დასრულებულია') return 0; const received = toNumber_(g.ReceivedAmountCNY); return received || toNumber_(g.AmountCNY); }
+function sum_(rows, field) { return rows.reduce((acc, row) => acc + toNumber_(row[field]), 0); }
+function filterCompany_(rows, company) { if (!company) return rows; return rows.filter(r => String(r.Company) === String(company)); }
+function cleanObject_(obj, partial) { const out = {}; Object.keys(obj).forEach(k => { const v = obj[k]; if (partial && v === undefined) return; out[k] = v === undefined ? '' : v; }); return out; }
+function findLastDate_(rows) { const dates = rows.map(r => r.UpdatedAt || r.CreatedAt || r.PaymentDate || r.ChargeDate || r.ReceivedDate || r.SentDate || r.OrderDate).filter(Boolean).map(String).sort(); return dates.length ? dates[dates.length - 1] : ''; }
+function getCompanyFromPatchOrRow_(patch, row, headers) { if (patch.Company) return patch.Company; const idx = headers.indexOf('Company'); return idx !== -1 ? row[idx] : ''; }
+function logActivity_(company, entity, entityId, action, comment) { try { appendObject_(SHEETS.ACTIVITY, { ID: makeId_('LOG'), Company: company || '', Entity: entity, EntityID: entityId, Action: action, Comment: comment || '', CreatedAt: now_() }); } catch (err) {} }
+function getSettings_() { const rows = readRows_(SHEETS.SETTINGS); const out = {}; rows.forEach(r => { out[r.Key] = String(r.Value || '').split(',').map(x => x.trim()).filter(Boolean); }); return out; }
+function clearCache_() { try { const cache = CacheService.getScriptCache(); cache.remove('APP_DATA_ALL'); CONFIG.DEFAULT_COMPANIES.forEach(c => cache.remove('APP_DATA_' + c)); } catch (err) {} return ok_({ message: 'Cache cleared' }); }
 
 /*******************************************************
  * OPTIONAL TEST FUNCTIONS
- * Run these manually from Apps Script editor.
  *******************************************************/
-
-function TEST_setupDatabase() {
-  return setupDatabase();
-}
-
-function TEST_getAppData() {
-  return getAppData('Brand House');
-}
+function TEST_setupDatabase() { return setupDatabase(); }
+function TEST_getAppData() { return getAppData('Brand House'); }
